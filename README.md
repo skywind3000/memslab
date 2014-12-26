@@ -26,27 +26,27 @@ Example
 
 int main(void)
 {
-char *ptr;
+	char *ptr;
 
-/* init kmem interface */
-ikmem_init(0, 0, 0);
+	/* init kmem interface */
+	ikmem_init(0, 0, 0);
 
-ptr = (char*)ikmem_malloc(8);
-assert(ptr);
+	ptr = (char*)ikmem_malloc(8);
+	assert(ptr);
 
-printf("sizeof(ptr)=%d\n", ikmem_ptr_size(ptr));
+	printf("sizeof(ptr)=%d\n", ikmem_ptr_size(ptr));
 
-ptr = ikmem_realloc(ptr, 40);
-assert(ptr);
+	ptr = ikmem_realloc(ptr, 40);
+	assert(ptr);
 
-printf("sizeof(ptr)=%d\n", ikmem_ptr_size(ptr));
+	printf("sizeof(ptr)=%d\n", ikmem_ptr_size(ptr));
 
-ikmem_free(ptr);
+	ikmem_free(ptr);
 
-/* clean environment */
-ikmem_destroy();
+	/* clean environment */
+	ikmem_destroy();
 
-return 0;
+	return 0;
 }
 ```
 
