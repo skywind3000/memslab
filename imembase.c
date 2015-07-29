@@ -1152,10 +1152,6 @@ static void *imemcache_alloc(imemcache_t *cache)
 	void *ptr = NULL;
 	void **head;
 
-#ifndef IKMEM_DISABLE_THREADID
-	array_index = IMUTEX_THREAD_ID();
-#endif
-
 	if (__ihook_processor_id) 
 		array_index = __ihook_processor_id();
 
@@ -1191,10 +1187,6 @@ static void *imemcache_free(imemcache_t *cache, void *ptr)
 	void **head;
 	int array_index = 0;
 	int invalidptr, count;
-
-#ifndef IKMEM_DISABLE_THREADID
-	array_index = IMUTEX_THREAD_ID();
-#endif
 
 	if (__ihook_processor_id) 
 		array_index = __ihook_processor_id();
@@ -1725,11 +1717,14 @@ void ikmem_destroy(void)
 }
 
 
-
+/*====================================================================*/
+/* IKMEM CORE                                                         */
+/*====================================================================*/
 #define IKMEM_LARGE_HEAD	\
 	IMROUNDUP(sizeof(iqueue_head) + sizeof(void*) + sizeof(ilong))
 
 #define IKMEM_STAT(cache, id) (((ilong*)((cache)->extra))[id])
+
 
 void ikmem_once_init(void)
 {
