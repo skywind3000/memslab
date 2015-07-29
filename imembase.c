@@ -1118,6 +1118,10 @@ static void imemcache_list_free(imemcache_t *cache, void *ptr)
 /*====================================================================*/
 /* IMEMECACHE INTERFACE                                               */
 /*====================================================================*/
+
+/* callback to fetch processor id */
+int (*__ihook_processor_id)(void) = NULL;
+
 static int imemcache_fill_batch(imemcache_t *cache, int array_index)
 {
 	imemlru_t *array = &cache->array[array_index];
@@ -1148,7 +1152,13 @@ static void *imemcache_alloc(imemcache_t *cache)
 	void *ptr = NULL;
 	void **head;
 
-	array_index = 0;
+#ifndef IKMEM_DISABLE_THREADID
+	array_index = IMUTEX_THREAD_ID();
+#endif
+
+	if (__ihook_processor_id) 
+		array_index = __ihook_processor_id();
+
 	array_index &= (IMCACHE_LRU_COUNT - 1);
 
 	array = &cache->array[array_index];
@@ -1182,7 +1192,13 @@ static void *imemcache_free(imemcache_t *cache, void *ptr)
 	int array_index = 0;
 	int invalidptr, count;
 
-	array_index = 0;
+#ifndef IKMEM_DISABLE_THREADID
+	array_index = IMUTEX_THREAD_ID();
+#endif
+
+	if (__ihook_processor_id) 
+		array_index = __ihook_processor_id();
+
 	array_index &= (IMCACHE_LRU_COUNT - 1);
 	
 	head = (void**)(lptr - sizeof(void*));
@@ -1299,6 +1315,7 @@ static imemcache_t *imemcache_create(const char *name,
 
 	if (cache->gfp) cache->gfp->refcnt++;
 	cache->flags |= IMCACHE_FLAG_NOLOCK;
+	cache->index = 0;
 
 	iqueue_init(&cache->queue);
 
@@ -1434,6 +1451,8 @@ static int ikmem_append(size_t size, struct IMEMGFP *gfp)
 		ikmem_lookup = p2;
 	}
 
+	cache->index = ikmem_count;
+
 	ikmem_array[ikmem_count] = cache;
 	ikmem_lookup[ikmem_count++] = cache;
 
@@ -1513,7 +1532,7 @@ static void ikmem_insert(size_t objsize, int approxy)
 		optimize = ikmem_array[index]->obj_size;
 		if (optimize < objsize) continue;
 		if (optimize == objsize) break;
-		if (optimize - objsize <= (objsize >> 3) && approxy) break;
+		if (optimize - objsize <= (objsize >> 4) && approxy) break;
 	}
 
 	if (index < ikmem_count) 
@@ -1537,13 +1556,14 @@ static imemcache_t *ikmem_choose_size(size_t size)
 
 static void ikmem_setup_caches(size_t *sizelist)
 {
+	static int Z[] = { 24, 40, 48, 56, 80, 96, 112, 160, 192, 224, 330, -1 };
 	size_t fib1 = 8, fib2 = 16, f;
 	size_t *sizevec, *p;
 	size_t k = 0;
 	ilong limit, shift, count, i, j;
 	imemcache_t *cache;
 
-	limit = 32;
+	limit = 64;
 	sizevec = (size_t*)internal_malloc(0, sizeof(ilong) * limit);
 	assert(sizevec);
 
@@ -1564,11 +1584,20 @@ static void ikmem_setup_caches(size_t *sizelist)
 		ikmem_sizevec_append(((size_t)1) << shift);
 	}
 
+	#ifndef IKMEM_DISABLE_JESIZE
+	for (i = 0; Z[i] >= 0; i++) {
+		k = (size_t)Z[i];
+		ikmem_sizevec_append(k);
+	}
+	fib1 = 168;
+	fib2 = 272;
+	#endif
+
 	for (; fib2 < (imem_gfp_default.page_size >> 2); ) {
 		f = fib1 + fib2;
 		fib1 = fib2;
 		fib2 = f;
-		#ifdef IKMEM_USEFIB
+		#ifndef IKMEM_DISABLE_FIB
 		ikmem_sizevec_append(f);
 		#endif
 	}
@@ -1599,6 +1628,7 @@ static void ikmem_setup_caches(size_t *sizelist)
 	for (i = 0; i < ikmem_count; i++) {
 		cache = ikmem_array[i];
 		cache->extra = (ilong*)internal_malloc(0, sizeof(ilong) * 8);
+		cache->index = i;
 		assert(cache->extra);
 		memset(cache->extra, 0, sizeof(ilong) * 8);
 	}
@@ -1703,7 +1733,11 @@ void ikmem_destroy(void)
 
 void ikmem_once_init(void)
 {
-#if defined(WIN32) || defined(_WIN32) || defined(_WIN64) || defined(WIN64)
+#if defined(IMUTEX_DISABLE)
+	if (ikmem_inited == 0) {
+		ikmem_init(0, 0, NULL);
+	}
+#elif defined(WIN32) || defined(_WIN32) || defined(_WIN64) || defined(WIN64)
 	static DWORD align_dwords[20] = { 
 		0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0
 	};

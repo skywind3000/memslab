@@ -267,7 +267,7 @@ typedef struct IMEMSLAB imemslab_t;
 #ifndef IMUTEX_TYPE
 
 #ifndef IMUTEX_DISABLE
-#if (defined(WIN32) || defined(_WIN32))
+#if (defined(WIN32) || defined(_WIN32) || defined(WIN64) || defined(_WIN64))
 #if ((!defined(_M_PPC)) && (!defined(_M_PPC_BE)) && (!defined(_XBOX)))
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0500
@@ -310,6 +310,18 @@ typedef struct IMEMSLAB imemslab_t;
 
 #endif
 
+#ifndef IMUTEX_THREAD_ID
+#ifdef IMUTEX_DISABLE
+	#define IMUTEX_THREAD_ID() ((int)0)
+#elif defined(WIN32) || defined(_WIN32) || defined(WIN64) || defined(_WIN64)
+	#define IMUTEX_THREAD_ID() ((int)GetCurrentThreadId())
+#elif defined(__unix) || defined(__unix__) || defined(__MACH__)
+	#define IMUTEX_THREAD_ID() ((int)pthread_self())
+#else
+	#define IMUTEX_THREAD_ID() ((int)0)
+#endif
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -347,7 +359,7 @@ typedef struct IMEMGFP imemgfp_t;
 /* IMEMLRU                                                            */
 /*====================================================================*/
 #ifndef IMCACHE_ARRAYLIMIT
-#define IMCACHE_ARRAYLIMIT 64
+#define IMCACHE_ARRAYLIMIT 128
 #endif
 
 #ifndef IMCACHE_NODECOUNT_SHIFT
@@ -361,7 +373,7 @@ typedef struct IMEMGFP imemgfp_t;
 #endif
 
 #ifndef IMCACHE_LRU_SHIFT
-#define IMCACHE_LRU_SHIFT	2
+#define IMCACHE_LRU_SHIFT	3
 #endif
 
 #define IMCACHE_LRU_COUNT	(1 << IMCACHE_LRU_SHIFT)
@@ -410,6 +422,7 @@ struct IMEMCACHE
 	size_t num;	
 	ilong flags;
 	ilong user;
+	int index;
 	void*extra;
 
 	char name[IMCACHE_NAMESIZE + 1];
