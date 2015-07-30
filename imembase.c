@@ -1388,6 +1388,11 @@ static size_t ikmem_range_low = 0;
 extern const ikmemhook_t ikmem_std_hook;
 static const ikmemhook_t *ikmem_hook = IKMEM_DEFAULT_HOOK;
 
+int ikmem_boot_flags = 0;
+
+// invoked when IKMEM_ENABLE_BOOT is defined
+void ikmem_boot_hook(int stage);
+
 
 static int ikmem_append(size_t size, struct IMEMGFP *gfp)
 {
@@ -1629,39 +1634,134 @@ static void ikmem_setup_caches(size_t *sizelist)
 	ikmem_size_lookup2[0] = NULL;
 }
 
+#define IKMEM_MUTEX_MAX		8
+
+#define IKMEM_MUTEX_INIT	(-1)
+#define IKMEM_MUTEX_ONCE	(-2)
+#define IKMEM_MUTEX_BOOT0	(-3)
+#define IKMEM_MUTEX_BOOT1	(-4)
+
+IMUTEX_TYPE* ikmem_mutex_once(int id)
+{
+	static IMUTEX_TYPE mutexs[IKMEM_MUTEX_MAX];
+#if defined(IMUTEX_DISABLE) 
+	return &mutexs[0];
+#elif defined(WIN32) || defined(_WIN32) || defined(_WIN64) || defined(WIN64)
+	static int mutex_inited = 0;
+	if (mutex_inited == 0) {
+		static DWORD align_dwords[20] = { 
+			0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0
+		};
+		unsigned char *align_ptr = (unsigned char*)align_dwords;
+		LONG *once;
+		LONG last = 0;
+		while (((size_t)align_ptr) & 63) align_ptr++;
+		once = (LONG*)align_ptr;
+		last = InterlockedExchange(once, 1);
+		if (last == 0) {
+			if (mutex_inited == 0) {
+				int i = 0;
+				for (i = 0; i < IKMEM_MUTEX_MAX; i++) {
+					IMUTEX_INIT(&mutexs[i]);
+				}
+				mutex_inited = 1;
+			}
+		}
+		while (mutex_inited == 0) Sleep(1);
+	}
+	return &mutexs[(id + 4) & (IKMEM_MUTEX_MAX - 1)];
+#elif defined(__unix) || defined(__unix__) || defined(__MACH__)
+	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+	static int mutex_inited = 0;
+	if (mutex_inited == 0) {
+		pthread_mutex_lock(&mutex);
+		if (mutex_inited == 0) {
+			int i;
+			for (i = 0; i < IKMEM_MUTEX_MAX; i++) {
+				IMUTEX_INIT(&mutex[i]);
+			}
+			mutex_inited = 1;
+		}
+		pthread_mutex_unlock(&mutex);
+	}
+	return &mutexs[(id + 4) & (IKMEM_MUTEX_MAX - 1)];
+#else
+	return &mutexs[0];
+#endif
+}
+
+int ikmem_current_cpu(void)
+{
+#if defined(IMUTEX_DISABLE) 
+	return 0;
+#elif defined(WIN32) || defined(_WIN32) || defined(_WIN64) || defined(WIN64)
+	return (int)(GetCurrentThreadId() % 67);
+#elif defined(__unix) || defined(__unix__) || defined(__MACH__)
+	size_t self = (size_t)pthread_self();
+	return (int)(self % 67);
+#else
+	return 0;
+#endif
+}
 
 void ikmem_init(int page_shift, int pg_malloc, size_t *sz)
 {
 	size_t psize;
 	ilong limit;
 
-	assert(ikmem_inited == 0 && imslab_inited == 0);
-	assert(imem_gfp_inited == 0);
+	if (ikmem_inited != 0)
+		return;
 
-	imem_gfp_init(page_shift, pg_malloc);
-	imslab_set_init();
+	IMUTEX_TYPE *mutex = ikmem_mutex_once(IKMEM_MUTEX_INIT);
+
+	IMUTEX_LOCK(mutex);
+
+	if (ikmem_inited == 0) {
+		imem_gfp_init(page_shift, pg_malloc);
+		imslab_set_init();
+		
+		ikmem_lookup = NULL;
+		ikmem_array = NULL;
+		ikmem_count = 0;
+		ikmem_inuse = 0;
+
+		psize = imem_gfp_default.page_size - IMROUNDUP(sizeof(void*));
+		ikmem_append(psize, 0);
+
+		limit = imem_page_shift - 4;
+		limit = limit < 10? 10 : limit;
+		
+		ikmem_setup_caches(sz);
+
+		imutex_init(&ikmem_lock);
+		iqueue_init(&ikmem_head);
+		iqueue_init(&ikmem_large_ptr);
+
+		ikmem_range_high = (size_t)0;
+		ikmem_range_low = ~((size_t)0);
+
+	#if defined(IMUTEX_DISABLE) 
+		__ihook_processor_id = NULL;
+	#else
+		__ihook_processor_id = ikmem_current_cpu;
+	#endif
+
+		ikmem_inited = 1;
+	}
+
+	IMUTEX_UNLOCK(mutex);
 	
-	ikmem_lookup = NULL;
-	ikmem_array = NULL;
-	ikmem_count = 0;
-	ikmem_inuse = 0;
-
-	psize = imem_gfp_default.page_size - IMROUNDUP(sizeof(void*));
-	ikmem_append(psize, 0);
-
-	limit = imem_page_shift - 4;
-	limit = limit < 10? 10 : limit;
-	
-	ikmem_setup_caches(sz);
-
-	imutex_init(&ikmem_lock);
-	iqueue_init(&ikmem_head);
-	iqueue_init(&ikmem_large_ptr);
-
-	ikmem_range_high = (size_t)0;
-	ikmem_range_low = ~((size_t)0);
-
-	ikmem_inited = 1;
+#ifdef IKMEM_ENABLE_BOOT
+	if ((ikmem_boot_flags & 1) == 0) {
+		mutex = ikmem_mutex_once(IKMEM_MUTEX_BOOT0);
+		IMUTEX_LOCK(mutex);
+		if ((ikmem_boot_flags & 1) == 0) {
+			ikmem_boot_hook(0);
+			ikmem_boot_flags |= 1;
+		}
+		IMUTEX_UNLOCK(mutex);
+	}
+#endif
 }
 
 void ikmem_destroy(void)
@@ -1673,6 +1773,18 @@ void ikmem_destroy(void)
 	if (ikmem_inited == 0) {
 		return;
 	}
+
+#ifdef IKMEM_ENABLE_BOOT
+	if (ikmem_boot_flags) {
+		IMUTEX_TYPE *mutex = ikmem_mutex_once(IKMEM_MUTEX_BOOT0);
+		IMUTEX_LOCK(mutex);
+		if (ikmem_boot_flags) {
+			ikmem_boot_hook(1);
+			ikmem_boot_flags = 0;
+		}
+		IMUTEX_UNLOCK(mutex);
+	}
+#endif
 
 	imutex_lock(&ikmem_lock);
 	for (p = ikmem_head.next; p != &ikmem_head; ) {
@@ -1728,38 +1840,12 @@ void ikmem_destroy(void)
 
 void ikmem_once_init(void)
 {
-#if defined(IMUTEX_DISABLE)
+	IMUTEX_TYPE *mutex = ikmem_mutex_once(IKMEM_MUTEX_ONCE);
+	IMUTEX_LOCK(mutex);
 	if (ikmem_inited == 0) {
 		ikmem_init(0, 0, NULL);
 	}
-#elif defined(WIN32) || defined(_WIN32) || defined(_WIN64) || defined(WIN64)
-	static DWORD align_dwords[20] = { 
-		0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0
-	};
-	unsigned char *align_ptr = (unsigned char*)align_dwords;
-	LONG *once;
-	LONG last = 0;
-	while (((size_t)align_ptr) & 63) align_ptr++;
-	once = (LONG*)align_ptr;
-	last = InterlockedExchange(once, 1);
-	if (last == 0) {
-		if (ikmem_inited == 0) {
-			ikmem_init(0, 0, NULL);
-		}
-	}
-	while (ikmem_inited == 0) Sleep(1);
-#elif defined(__unix) || defined(__unix__) || defined(__MACH__)
-	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-	pthread_mutex_lock(&mutex);
-	if (ikmem_inited == 0) {
-		ikmem_init(0, 0, NULL);
-	}
-	pthread_mutex_unlock(&mutex);
-#else
-	if (ikmem_inited == 0) {
-		ikmem_init(0, 0, NULL);
-	}
-#endif
+	IMUTEX_UNLOCK(mutex);
 }
 
 void* ikmem_core_malloc(size_t size);
@@ -1949,8 +2035,26 @@ void ikmem_core_shrink(void)
 	}
 }
 
+void ikmem_boot_once(void)
+{
+#ifdef IKMEM_ENABLE_BOOT
+	if ((ikmem_boot_flags & 2) == 0) {
+		IMUTEX_TYPE *mutex = ikmem_mutex_once(IKMEM_MUTEX_BOOT1);
+		IMUTEX_LOCK(mutex);
+		if ((ikmem_boot_flags & 2) == 0) {
+			ikmem_boot_hook(2);
+			ikmem_boot_flags |= 2;
+		}
+		IMUTEX_UNLOCK(mutex);
+	}
+#endif
+}
+
 void* ikmem_malloc(size_t size)
 {
+#ifdef IKMEM_ENABLE_BOOT
+	if ((ikmem_boot_flags & 2) == 0) ikmem_boot_once();
+#endif
 	if (ikmem_hook) {
 		return ikmem_hook->kmem_malloc_fn(size);
 	}
@@ -1959,6 +2063,9 @@ void* ikmem_malloc(size_t size)
 
 void* ikmem_realloc(void *ptr, size_t size)
 {
+#ifdef IKMEM_ENABLE_BOOT
+	if ((ikmem_boot_flags & 2) == 0) ikmem_boot_once();
+#endif
 	if (ikmem_hook) {
 		return ikmem_hook->kmem_realloc_fn(ptr, size);
 	}
@@ -1967,6 +2074,9 @@ void* ikmem_realloc(void *ptr, size_t size)
 
 void ikmem_free(void *ptr)
 {
+#ifdef IKMEM_ENABLE_BOOT
+	if ((ikmem_boot_flags & 2) == 0) ikmem_boot_once();
+#endif
 	if (ikmem_hook) {
 		ikmem_hook->kmem_free_fn(ptr);
 		return;

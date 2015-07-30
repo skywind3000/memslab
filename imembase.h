@@ -310,17 +310,6 @@ typedef struct IMEMSLAB imemslab_t;
 
 #endif
 
-#ifndef IMUTEX_THREAD_ID
-#ifdef IMUTEX_DISABLE
-	#define IMUTEX_THREAD_ID() ((int)0)
-#elif defined(WIN32) || defined(_WIN32) || defined(WIN64) || defined(_WIN64)
-	#define IMUTEX_THREAD_ID() ((int)GetCurrentThreadId())
-#elif defined(__unix) || defined(__unix__) || defined(__MACH__)
-	#define IMUTEX_THREAD_ID() ((int)pthread_self())
-#else
-	#define IMUTEX_THREAD_ID() ((int)0)
-#endif
-#endif
 
 #ifdef __cplusplus
 extern "C" {
