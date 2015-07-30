@@ -1678,7 +1678,7 @@ IMUTEX_TYPE* ikmem_mutex_once(int id)
 		if (mutex_inited == 0) {
 			int i;
 			for (i = 0; i < IKMEM_MUTEX_MAX; i++) {
-				IMUTEX_INIT(&mutex[i]);
+				IMUTEX_INIT(&mutexs[i]);
 			}
 			mutex_inited = 1;
 		}
