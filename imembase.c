@@ -1647,7 +1647,7 @@ IMUTEX_TYPE* ikmem_mutex_once(int id)
 #if defined(IMUTEX_DISABLE) 
 	return &mutexs[0];
 #elif defined(WIN32) || defined(_WIN32) || defined(_WIN64) || defined(WIN64)
-	static int mutex_inited = 0;
+	static volatile int mutex_inited = 0;
 	if (mutex_inited == 0) {
 		static DWORD align_dwords[20] = { 
 			0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0
