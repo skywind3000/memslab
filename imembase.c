@@ -1672,7 +1672,7 @@ IMUTEX_TYPE* ikmem_mutex_once(int id)
 	return &mutexs[(id + 4) & (IKMEM_MUTEX_MAX - 1)];
 #elif defined(__unix) || defined(__unix__) || defined(__MACH__)
 	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-	static int mutex_inited = 0;
+	static volatile int mutex_inited = 0;
 	if (mutex_inited == 0) {
 		pthread_mutex_lock(&mutex);
 		if (mutex_inited == 0) {
