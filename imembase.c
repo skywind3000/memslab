@@ -1660,7 +1660,7 @@ static void ikmem_setup_caches(size_t *sizelist)
 		ikmem_size_lookup2[f >> 10] = ikmem_choose_size(f);
 
 	for (i = 0; i < ikmem_count; i++) {
-		cache = ikmem_array[i];
+		cache = ikmem_lookup[i];
 		cache->extra = (ilong*)internal_malloc(0, sizeof(ilong) * 8);
 		cache->index = i;
 		assert(cache->extra);
@@ -2031,7 +2031,11 @@ void* ikmem_core_realloc(void *ptr, size_t size)
 
 	if (ikmem_inited == 0) ikmem_once_init();
 
-	if (ptr == NULL) return ikmem_core_malloc(size);
+	if (ptr == NULL) {
+		if (size == 0) return NULL;
+		return ikmem_core_malloc(size);
+	}
+
 	oldsize = ikmem_core_ptrsize(ptr);
 
 	if (size == 0) {
@@ -2070,6 +2074,12 @@ void ikmem_core_shrink(void)
 		cache = ikmem_lookup[index];
 		imemcache_shrink(cache);
 	}
+}
+
+imemcache_t *ikmem_core_get(int id)
+{
+	if (id < 0 || id >= ikmem_count) return NULL;
+	return ikmem_lookup[id];
 }
 
 void ikmem_boot_once(void)
@@ -2176,13 +2186,6 @@ imemcache_t *ikmem_get(const char *name)
 {
 	return ikmem_search(name, 1);
 }
-
-imemcache_t *ikmem_vector(int id)
-{
-	if (id < 0 || id >= ikmem_count) return NULL;
-	return ikmem_array[id];
-}
-
 
 ilong ikmem_page_info(ilong *pg_inuse, ilong *pg_new, ilong *pg_del)
 {
