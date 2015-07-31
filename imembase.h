@@ -458,6 +458,7 @@ void ikmem_cache_free(imemcache_t *cache, void *ptr);
 size_t ikmem_ptr_size(const void *ptr);
 void ikmem_option(size_t watermark);
 imemcache_t *ikmem_get(const char *name);
+imemcache_t *ikmem_vector(int id);
 
 ilong ikmem_page_info(ilong *pg_inuse, ilong *pg_new, ilong *pg_del);
 ilong ikmem_cache_info(int id, int *inuse, int *cnew, int *cdel, int *cfree);

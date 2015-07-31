@@ -2177,6 +2177,12 @@ imemcache_t *ikmem_get(const char *name)
 	return ikmem_search(name, 1);
 }
 
+imemcache_t *ikmem_vector(int id)
+{
+	if (id < 0 || id >= ikmem_count) return NULL;
+	return ikmem_array[id];
+}
+
 
 ilong ikmem_page_info(ilong *pg_inuse, ilong *pg_new, ilong *pg_del)
 {
@@ -2271,6 +2277,11 @@ void *ikmem_cache_alloc(imemcache_t *cache)
 void ikmem_cache_free(imemcache_t *cache, void *ptr)
 {
 	imemcache_free(cache, ptr);
+}
+
+void ikmem_cache_shrink(imemcache_t *cache)
+{
+	imemcache_shrink(cache);
 }
 
 
