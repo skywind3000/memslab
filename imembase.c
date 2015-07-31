@@ -1153,7 +1153,7 @@ int imemcache_batch_new(imemcache_t *cache, void **ptr, int count)
 	for (n = 0; n < count; n++) {
 		void *p = imemcache_list_alloc(cache);
 		if (ptr == NULL) break;
-		ptr[count] = p;
+		ptr[n] = p;
 	}
 
 	imutex_unlock(&cache->list_lock);
