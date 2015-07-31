@@ -1144,6 +1144,43 @@ static int imemcache_fill_batch(imemcache_t *cache, int array_index)
 	return count;
 }
 
+int imemcache_batch_new(imemcache_t *cache, void **ptr, int count)
+{
+	int n = 0;
+
+	imutex_lock(&cache->list_lock);
+
+	for (n = 0; n < count; n++) {
+		void *p = imemcache_list_alloc(cache);
+		if (ptr == NULL) break;
+		ptr[count] = p;
+	}
+
+	imutex_unlock(&cache->list_lock);
+
+	return n;
+}
+
+int imemcache_batch_del(imemcache_t *cache, void **ptr, int count)
+{
+	int n = 0;
+
+	imutex_lock(&cache->list_lock);
+
+	for (n = 0; n < count; n++) {
+		imemcache_list_free(cache, ptr[n]);
+	}
+
+	if (cache->free_objects >= cache->free_limit) {
+		if (cache->count_free > 1) {
+			imemcache_drain_list(cache, 0, cache->count_free >> 1);
+		}
+	}
+
+	imutex_unlock(&cache->list_lock);
+
+	return count;
+}
 
 static void *imemcache_alloc(imemcache_t *cache)
 {
