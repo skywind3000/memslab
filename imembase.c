@@ -1576,7 +1576,7 @@ static void ikmem_insert(size_t objsize, int approxy)
 	ikmem_append(objsize, gfp);
 }
 
-static imemcache_t *ikmem_choose_size(size_t size)
+imemcache_t *ikmem_choose_size(size_t size)
 {
 	int index;
 	if (size >= imem_page_size) return NULL;
