@@ -25,7 +25,7 @@
  *  
  *
  **********************************************************************/
-
+//#define IKMEM_ENABLE_BOOT
 //#define IMUTEX_DISABLE
 //#define IKMEM_USEFIB
 //#define IMLOG_ENABLE
@@ -33,7 +33,7 @@
 #include "imembase.c"
 
 #define CASE_TIMES		4000000
-#define CASE_LIMIT		(1024)		// 0-64KB each block
+#define CASE_LIMIT		(64)		// 0-64KB each block
 #define CASE_HIWATER	(50 << 20)		// 100MB memory
 #define CASE_PROB		(55)			// probability of (alloc) is 60% 
 
@@ -81,6 +81,7 @@ void *xmalloc(iulong size)
 	ilong *ptr;
 	if (kmem_turnon) ptr = (ilong*)ikmem_malloc(size);
 	else ptr = (ilong*)malloc(size);
+//	pos = GetCurrentThreadId() % 100001;
 	end = size / sizeof(ilong);
 	for (pos = 0; pos < end ; pos += 1024)
 		ptr[pos] = (ilong)pos;
@@ -211,6 +212,11 @@ int cpuid(void)
 	return GetCurrentThreadId();
 }
 
+void ikmem_boot_hook2(int stage)
+{
+	printf("boot %d\n", stage);
+}
+
 int main(void)
 {
 	char key;
@@ -230,18 +236,18 @@ int main(void)
 	//imutex_neglect(1);
 	//imutex_disable = 1;
 
-	__ihook_processor_id = cpuid;
+	//__ihook_processor_id = cpuid;
 
 	/* testing with ikmem_alloc / ikmem_free */
 	printf("Benchmark with ikmem_alloc / ikmem_free:\n");
 	kmem_turnon = 1;
 	memory_case(CASE_LIMIT, CASE_HIWATER, CASE_TIMES, CASE_PROB, 256);
 
-	printf("kmem_count=%d current=%d\n", ikmem_count, GetCurrentThreadId());
+	printf("kmem_count=%d current=%d\n", ikmem_count, (GetCurrentThreadId() % 71) & 7);
 
 	int i = 0;
 	for (i = 0; i < ikmem_count; i++) {
-		printf("[%d] %d\n", i, ikmem_array[ikmem_count - 1 - i]->obj_size);
+	//	printf("[%d] %d\n", i, ikmem_array[ikmem_count - 1 - i]->obj_size);
 	}
 
 	printf("anykey to continue....\n");
