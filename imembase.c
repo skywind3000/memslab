@@ -1,6 +1,7 @@
 /**********************************************************************
  *
  * imembase.c - basic interface of memory operation
+ * skywind3000 (at) gmail.com, 2006-2016
  *
  * - application layer slab allocator implementation
  * - unit interval time cost: almost speed up 500% - 1200% vs malloc
@@ -453,7 +454,7 @@ static ilong imslab_init(imemslab_t *slab, void *membase,
 	assert(slab && membase);
 	assert((size_t)obj_size >= sizeof(void*));
 
-	iqueue_init(&slab->queue);
+	ilist_init(&slab->queue);
 	slab->membase = membase;
 	slab->memsize = memsize;
 	slab->coloroff = coloroff;
@@ -843,9 +844,9 @@ static void imemcache_init_list(imemcache_t *cache, imemgfp_t *gfp,
 	cache->gfp = gfp;
 
 	if (gfp == NULL) gfp = &imem_gfp_default;
-	iqueue_init(&cache->slabs_free);
-	iqueue_init(&cache->slabs_partial);
-	iqueue_init(&cache->slabs_full);
+	ilist_init(&cache->slabs_free);
+	ilist_init(&cache->slabs_partial);
+	ilist_init(&cache->slabs_full);
 
 	cache->page_size = gfp->page_size;
 	cache->obj_size = obj_size;
@@ -876,7 +877,7 @@ static void imemcache_init_list(imemcache_t *cache, imemgfp_t *gfp,
 		imutex_init(&cache->array[i].lock);
 	}
 
-	iqueue_init(&cache->queue);
+	ilist_init(&cache->queue);
 
 	cache->pages_new = 0;
 	cache->pages_del = 0;
@@ -944,7 +945,7 @@ static void imemcache_slab_delete(imemcache_t *cache, imemslab_t *slab)
 static ilong imemcache_drain_list(imemcache_t *cache, int id, ilong tofree)
 {
 	imemslab_t *slab;
-	iqueue_head *head, *p;
+	ilist_head *head, *p;
 	ilong free_count = 0;
 
 	if (id == 0) head = &cache->slabs_free;
@@ -952,7 +953,7 @@ static ilong imemcache_drain_list(imemcache_t *cache, int id, ilong tofree)
 	else if (id == 2) head = &cache->slabs_partial;
 	else return -1;
 
-	while (!iqueue_is_empty(head)) {
+	while (!ilist_is_empty(head)) {
 		if (tofree >= 0 && free_count >= tofree) break;
 		if (IMCACHE_NOLOCK(cache) == 0)
 			imutex_lock(&cache->list_lock);
@@ -962,8 +963,8 @@ static ilong imemcache_drain_list(imemcache_t *cache, int id, ilong tofree)
 				imutex_unlock(&cache->list_lock);
 			break;
 		}
-		slab = iqueue_entry(p, imemslab_t, queue);
-		iqueue_del(p);
+		slab = ilist_entry(p, imemslab_t, queue);
+		ilist_del(p);
 		if (IMCACHE_NOLOCK(cache) == 0)
 			imutex_unlock(&cache->list_lock);
 		if (id == 0) {
@@ -1005,7 +1006,7 @@ static void imemcache_destroy_list(imemcache_t *cache)
 static void* imemcache_list_alloc(imemcache_t *cache)
 {
 	imemslab_t *slab;
-	iqueue_head *p;
+	ilist_head *p;
 	ilong slab_obj_num;
 	char *lptr = NULL;
 
@@ -1024,25 +1025,25 @@ static void* imemcache_list_alloc(imemcache_t *cache)
 			}
 			p = &slab->queue;
 			cache->free_objects += slab_obj_num;
-			slab = iqueue_entry(p, imemslab_t, queue);
+			slab = ilist_entry(p, imemslab_t, queue);
 		}	else {
-			iqueue_del(p);
-			iqueue_init(p);
+			ilist_del(p);
+			ilist_init(p);
 			cache->count_free--;
-			slab = iqueue_entry(p, imemslab_t, queue);
+			slab = ilist_entry(p, imemslab_t, queue);
 		}
-		iqueue_add(p, &cache->slabs_partial);
+		ilist_add(p, &cache->slabs_partial);
 		cache->count_partial++;
 	}
-	slab = iqueue_entry(p, imemslab_t, queue);
+	slab = ilist_entry(p, imemslab_t, queue);
 	assert(IMEMSLAB_ISFULL(slab) == 0);
 	lptr = (char*)imslab_alloc(slab);
 	assert(lptr);
 	if (cache->free_objects) cache->free_objects--;
 	if (IMEMSLAB_ISFULL(slab)) {
-		iqueue_del(p);
-		iqueue_init(p);
-		iqueue_add(p, &cache->slabs_full);
+		ilist_del(p);
+		ilist_init(p);
+		ilist_add(p, &cache->slabs_full);
 		cache->count_partial--;
 		cache->count_full++;
 	}
@@ -1056,7 +1057,7 @@ static void* imemcache_list_alloc(imemcache_t *cache)
 static void imemcache_list_free(imemcache_t *cache, void *ptr)
 {
 	imemslab_t *slab;
-	iqueue_head *p;
+	ilist_head *p;
 	char *lptr = (char*)ptr;
 	char *membase;
 	int invalidptr;
@@ -1085,9 +1086,9 @@ static void imemcache_list_free(imemcache_t *cache, void *ptr)
 
 	if (IMEMSLAB_ISFULL(slab)) {
 		assert(cache->count_full);
-		iqueue_del(p);
-		iqueue_init(p);
-		iqueue_add_tail(p, &cache->slabs_partial);
+		ilist_del(p);
+		ilist_init(p);
+		ilist_add_tail(p, &cache->slabs_partial);
 		cache->count_full--;
 		cache->count_partial++;
 	}
@@ -1095,9 +1096,9 @@ static void imemcache_list_free(imemcache_t *cache, void *ptr)
 	cache->free_objects++;
 
 	if (IMEMSLAB_ISEMPTY(slab)) {
-		iqueue_del(p);
-		iqueue_init(p);
-		iqueue_add(p, &cache->slabs_free);
+		ilist_del(p);
+		ilist_init(p);
+		ilist_add(p, &cache->slabs_free);
 		cache->count_partial--;
 		cache->count_free++;
 	}
@@ -1346,7 +1347,7 @@ static imemcache_t *imemcache_create(const char *name,
 	cache->flags |= IMCACHE_FLAG_NOLOCK;
 	cache->index = 0;
 
-	iqueue_init(&cache->queue);
+	ilist_init(&cache->queue);
 
 	gfp = &cache->page_supply;
 	gfp->page_size = cache->obj_size;
@@ -1408,8 +1409,8 @@ static imemcache_t *ikmem_size_lookup1[257];
 static imemcache_t *ikmem_size_lookup2[257];
 
 static size_t ikmem_inuse = 0;
-static iqueue_head ikmem_head;
-static iqueue_head ikmem_large_ptr;
+static ilist_head ikmem_head;
+static ilist_head ikmem_large_ptr;
 
 static size_t ikmem_water_mark = 0;
 
@@ -1772,8 +1773,8 @@ void ikmem_init(int page_shift, int pg_malloc, size_t *sz)
 		ikmem_setup_caches(sz);
 
 		imutex_init(&ikmem_lock);
-		iqueue_init(&ikmem_head);
-		iqueue_init(&ikmem_large_ptr);
+		ilist_init(&ikmem_head);
+		ilist_init(&ikmem_large_ptr);
 
 		ikmem_range_high = (size_t)0;
 		ikmem_range_low = ~((size_t)0);
@@ -1805,7 +1806,7 @@ void ikmem_init(int page_shift, int pg_malloc, size_t *sz)
 void ikmem_destroy(void)
 {
 	imemcache_t *cache;
-	iqueue_head *p, *next;
+	ilist_head *p, *next;
 	ilong index;
 
 	if (ikmem_inited == 0) {
@@ -1826,9 +1827,9 @@ void ikmem_destroy(void)
 
 	imutex_lock(&ikmem_lock);
 	for (p = ikmem_head.next; p != &ikmem_head; ) {
-		cache = IQUEUE_ENTRY(p, imemcache_t, queue);
+		cache = ILIST_ENTRY(p, imemcache_t, queue);
 		p = p->next;
-		iqueue_del(&cache->queue);
+		ilist_del(&cache->queue);
 		imemcache_release(cache);
 	}
 
@@ -1852,7 +1853,7 @@ void ikmem_destroy(void)
 
 	for (p = ikmem_large_ptr.next; p != &ikmem_large_ptr; ) {
 		next = p->next;
-		iqueue_del(p);
+		ilist_del(p);
 		internal_free(0, p);
 		p = next;
 	}
@@ -1871,7 +1872,7 @@ void ikmem_destroy(void)
 /* IKMEM CORE                                                         */
 /*====================================================================*/
 #define IKMEM_LARGE_HEAD	\
-	IMROUNDUP(sizeof(iqueue_head) + sizeof(void*) + sizeof(ilong))
+	IMROUNDUP(sizeof(ilist_head) + sizeof(void*) + sizeof(ilong))
 
 #define IKMEM_STAT(cache, id) (((ilong*)((cache)->extra))[id])
 
@@ -1903,7 +1904,7 @@ void* ikmem_core_malloc(size_t size)
 {
 	imemcache_t *cache = NULL;
 	size_t round;
-	iqueue_head *p;
+	ilist_head *p;
 	char *lptr;
 
 	if (ikmem_inited == 0) ikmem_once_init();
@@ -1929,13 +1930,13 @@ void* ikmem_core_malloc(size_t size)
 		lptr = (char*)internal_malloc(0, IKMEM_LARGE_HEAD + size);
 		if (lptr == NULL) return NULL;
 		
-		p = (iqueue_head*)lptr;
+		p = (ilist_head*)lptr;
 		lptr += IKMEM_LARGE_HEAD;
 		*(void**)(lptr - sizeof(void*)) = NULL;
 		*(ilong*)(lptr - sizeof(void*) - sizeof(ilong)) = size;
 
 		imutex_lock(&ikmem_lock);
-		iqueue_add(p, &ikmem_large_ptr);
+		ilist_add(p, &ikmem_large_ptr);
 		imutex_unlock(&ikmem_lock);
 
 	}	else {
@@ -1965,16 +1966,17 @@ void* ikmem_core_malloc(size_t size)
 void ikmem_core_free(void *ptr)
 {
 	imemcache_t *cache = NULL;
-	iqueue_head *p;
+	ilist_head *p;
 	char *lptr = (char*)ptr;
 
 	if (ikmem_inited == 0) ikmem_once_init();
+	if (ptr == NULL) return;
 
 	if (*(void**)(lptr - sizeof(void*)) == NULL) {
 		lptr -= IKMEM_LARGE_HEAD;
-		p = (iqueue_head*)lptr;
+		p = (ilist_head*)lptr;
 		imutex_lock(&ikmem_lock);
-		iqueue_del(p);
+		ilist_del(p);
 		imutex_unlock(&ikmem_lock);
 		internal_free(0, lptr);
 	}	else {
@@ -2122,6 +2124,7 @@ void* ikmem_realloc(void *ptr, size_t size)
 
 void ikmem_free(void *ptr)
 {
+	if (ptr == NULL) return;
 #ifdef IKMEM_ENABLE_BOOT
 	if ((ikmem_boot_flags & 2) == 0) ikmem_boot_once();
 #endif
@@ -2156,7 +2159,7 @@ size_t ikmem_ptr_size(const void *ptr)
 static imemcache_t* ikmem_search(const char *name, int needlock)
 {
 	imemcache_t *cache, *result;
-	iqueue_head *head;
+	ilist_head *head;
 	ilong index;
 
 	for (index = 0; index < ikmem_count; index++) {
@@ -2166,7 +2169,7 @@ static imemcache_t* ikmem_search(const char *name, int needlock)
 	result = NULL;
 	if (needlock) imutex_lock(&ikmem_lock);
 	for (head = ikmem_head.next; head != &ikmem_head; head = head->next) {
-		cache = iqueue_entry(head, imemcache_t, queue);
+		cache = ilist_entry(head, imemcache_t, queue);
 		if (strcmp(cache->name, name) == 0) {
 			result = cache;
 			break;
@@ -2252,7 +2255,7 @@ imemcache_t *ikmem_create(const char *name, size_t size)
 	}
 	cache->flags |= IMCACHE_FLAG_ONQUEUE;
 	cache->user = (ilong)gfp;
-	iqueue_add_tail(&ikmem_head, &cache->queue);
+	ilist_add_tail(&ikmem_head, &cache->queue);
 	imutex_unlock(&ikmem_lock);
 
 	return cache;
@@ -2265,7 +2268,7 @@ void ikmem_delete(imemcache_t *cache)
 	if (IMCACHE_SYSTEM(cache)) return;
 	if (IMCACHE_ONQUEUE(cache) == 0) return;
 	imutex_lock(&ikmem_lock);
-	iqueue_del(&cache->queue);
+	ilist_del(&cache->queue);
 	imutex_unlock(&ikmem_lock);
 	imemcache_release(cache); 
 }
