@@ -33,7 +33,7 @@
 #include "imembase.c"
 
 #define CASE_TIMES		4000000
-#define CASE_LIMIT		(64)		// 0-64KB each block
+#define CASE_LIMIT		(65535)		// 0-64KB each block
 #define CASE_HIWATER	(50 << 20)		// 100MB memory
 #define CASE_PROB		(55)			// probability of (alloc) is 60% 
 
