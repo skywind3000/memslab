@@ -209,7 +209,8 @@ ilong memory_case(ilong limit, ilong hiwater, ilong times, int rate, ilong seed)
 int cpuid(void)
 {
 	static int inited = 0;
-	return GetCurrentThreadId();
+	//return GetCurrentThreadId();
+	return 0;
 }
 
 void ikmem_boot_hook2(int stage)
@@ -243,7 +244,7 @@ int main(void)
 	kmem_turnon = 1;
 	memory_case(CASE_LIMIT, CASE_HIWATER, CASE_TIMES, CASE_PROB, 256);
 
-	printf("kmem_count=%d current=%d\n", ikmem_count, (GetCurrentThreadId() % 71) & 7);
+	printf("kmem_count=%d current=%d\n", ikmem_count, (0 % 71) & 7);
 
 	int i = 0;
 	for (i = 0; i < ikmem_count; i++) {
