@@ -11,7 +11,7 @@
  **********************************************************************/
 
 
-#include "imembase.c"
+#include "imemslab.c"
 #include <stdio.h>
 
 int main(void)

@@ -1,6 +1,6 @@
 /**********************************************************************
  *
- * imembase.h - basic interface of memory operation
+ * imemslab.h - slab tree allocation algorithm
  * skywind3000 (at) gmail.com, 2006-2016
  *
  * - application layer slab allocator implementation
@@ -17,8 +17,8 @@
  *
  **********************************************************************/
 
-#ifndef __IMEMBASE_H__
-#define __IMEMBASE_H__
+#ifndef _IMEMSLAB_H_
+#define _IMEMSLAB_H_
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"

@@ -30,7 +30,7 @@
 //#define IKMEM_USEFIB
 //#define IMLOG_ENABLE
 //#define IMEM_DEBUG
-#include "imembase.c"
+#include "imemslab.c"
 
 #define CASE_TIMES		4000000
 #define CASE_LIMIT		(65535)		// 0-64KB each block

@@ -17,7 +17,7 @@
  *
  **********************************************************************/
 
-#include "imembase.h"
+#include "imemslab.h"
 
 #include <stddef.h>
 #include <stdlib.h>
